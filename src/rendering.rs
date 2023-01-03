@@ -2,19 +2,24 @@ use std::io::Stdout;
 
 use tui::{
     backend::CrosstermBackend,
-    layout::{Alignment, Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
-    text::{Span, Spans},
-    widgets::{Block, BorderType, Borders, ListState, Paragraph, Tabs},
+    layout::{Constraint, Direction, Layout},
+    text::Spans,
+    widgets::ListState,
     Frame,
 };
 use tui_textarea::TextArea;
 
-use crate::MenuItem;
+use crate::{
+    data_fetching::{GameParsed, ReservationParsed, User},
+    MenuItem,
+};
 
+pub mod copyright;
 pub mod home_page;
 pub mod login;
+pub mod menu;
 pub mod order_tickets;
+pub mod popup;
 pub mod register;
 pub mod show_tickets;
 
@@ -23,6 +28,18 @@ pub fn ui(
     active_menu_item: MenuItem,
     ticket_list_state: &mut ListState,
     order_textarea: &mut [TextArea],
+    login_textarea: &mut [TextArea],
+    register_textarea: &mut [TextArea],
+    reservations: &Vec<ReservationParsed>,
+    games: &Vec<GameParsed>,
+    titles: &Vec<&str>,
+    popup_show: &[bool],
+    login_spans: &Vec<Spans>,
+    register_spans: &Vec<Spans>,
+    order_spans: &Vec<Spans>,
+    show_spans: &Vec<Spans>,
+    signed_in: bool,
+    user: &User,
 ) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -37,86 +54,44 @@ pub fn ui(
         )
         .split(f.size());
 
-    let menu_titles = ["1. Početna", "2. Pregled karata", "3. Zakazivanje karata"]
-        .iter()
-        .map(|t| {
-            let (first, rest) = t.split_at(1);
-            Spans::from(vec![
-                Span::styled(
-                    first,
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::UNDERLINED),
-                ),
-                Span::styled(rest, Style::default().fg(Color::White)),
-            ])
-        })
-        .collect();
-
-    let tabs = Tabs::new(menu_titles)
-        .select(active_menu_item.into())
-        .block(
-            Block::default()
-                .title("Meni")
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded),
-        )
-        .style(Style::default().fg(Color::White))
-        .highlight_style(Style::default().fg(Color::Yellow))
-        .divider(Span::raw("|"));
-    f.render_widget(tabs, chunks[0]);
-
-    let copyright = Paragraph::new("karte-CLI 2022 - Sva prava zadržana")
-        .style(Style::default().fg(Color::LightCyan))
-        .alignment(Alignment::Center)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .style(Style::default().fg(Color::White))
-                .title("Copyright")
-                .border_type(BorderType::Rounded),
-        );
-    f.render_widget(copyright, chunks[2]);
+    menu::show(active_menu_item, titles, &chunks, f);
+    copyright::show(&chunks, f);
 
     match active_menu_item {
-        MenuItem::Home => f.render_widget(home_page::render_home(), chunks[1]),
-        MenuItem::ShowTickets => {
-            let ticket_chunks = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(20), Constraint::Percentage(80)].as_ref())
-                .split(chunks[1]);
-            let detail_chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
-                .split(ticket_chunks[1]);
-            let (left, rightu, rightb) = show_tickets::render_show_tickets(ticket_list_state);
-            f.render_stateful_widget(left, ticket_chunks[0], ticket_list_state);
-            f.render_widget(rightu, detail_chunks[0]);
-            f.render_widget(rightb, detail_chunks[1]);
-        }
-        MenuItem::OrderTicket => {
-            let ticket_chunks = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(20), Constraint::Percentage(80)].as_ref())
-                .split(chunks[1]);
-            let order_layout = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints(
-                    [
-                        Constraint::Length(3),
-                        Constraint::Length(3),
-                        Constraint::Min(3),
-                    ]
-                    .as_ref(),
-                );
-
-            f.render_widget(order_tickets::render_match_ids(), ticket_chunks[0]);
-            let order_chunks = order_layout.split(ticket_chunks[1]);
-            f.render_widget(order_tickets::render_order_ticket_help(), order_chunks[2]);
-            for (textarea, chunk) in order_textarea.iter().zip(order_chunks) {
-                let widget = textarea.widget();
-                f.render_widget(widget, chunk);
-            }
-        }
+        MenuItem::Home => home_page::show(&chunks, f, signed_in, user),
+        MenuItem::Login => login::show(
+            f,
+            &chunks,
+            login_textarea,
+            popup_show[0],
+            "Neuspešno prijavljivanje (Ctrl+C za zatvaranje prozora)",
+            login_spans,
+        ),
+        MenuItem::Register => register::show(
+            f,
+            &chunks,
+            register_textarea,
+            popup_show[1],
+            "Neuspešna registracija (Ctrl+C za zatvaranje prozora)",
+            register_spans,
+        ),
+        MenuItem::ShowTickets => show_tickets::show(
+            f,
+            ticket_list_state,
+            reservations,
+            &chunks,
+            popup_show[2],
+            "Nema zakazanih karata",
+            show_spans,
+        ),
+        MenuItem::OrderTicket => order_tickets::show(
+            f,
+            &chunks,
+            games,
+            order_textarea,
+            popup_show[3],
+            "Neuspešna rezervacija (Ctrl+C za zatvaranje prozora)",
+            order_spans,
+        ),
     }
 }
